@@ -85,11 +85,7 @@ services:
           name: tradecopilot-redis
           property: connectionString
       - key: API_BASE_URL
-        fromService:
-          type: web
-          name: tradecopilot-api
-          property: hostport
-          envVarKey: API_INTERNAL_URL          # Render wires this to https://tradecopilot-api.onrender.com
+        value: https://tradecopilot-api.onrender.com   # Deterministic from service name; safe to hardcode.
       - key: JWT_SECRET
         fromService:
           type: web
