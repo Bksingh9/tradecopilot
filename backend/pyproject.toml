@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradecopilot-backend"
+version = "0.1.0"
+description = "TradeCopilot — multi-tenant AI trading copilot SaaS (NSE/BSE + US equities)"
+requires-python = ">=3.11"
+authors = [{ name = "TradeCopilot" }]
+readme = "README.md"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+asyncio_mode = "auto"

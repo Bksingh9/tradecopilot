@@ -1,0 +1,96 @@
+# Production compose. Caddy terminates TLS (Let's Encrypt) and reverse-proxies
+# /api → backend, everything else → static frontend bundle.
+#
+# Quick start on a fresh VM:
+#   1. Install Docker + docker-compose plugin.
+#   2. Copy this repo to /opt/tradecopilot.
+#   3. cp backend/.env.example backend/.env  (and set strong secrets).
+#   4. Edit Caddyfile: replace example.com with your domain (or "localhost" for dev).
+#   5. docker compose -f docker-compose.prod.yml up -d --build
+#
+# This compose is also referenced by deploy/vps/install.sh.
+version: "3.9"
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - frontend
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://tc:tc@db:5432/tradecopilot
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    expose:
+      - "8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://tc:tc@db:5432/tradecopilot
+      REDIS_URL: redis://redis:6379/0
+      API_BASE_URL: http://api:8000
+    depends_on:
+      - api
+      - redis
+    command: python -m app.workers.ai_worker
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Same-origin: Caddy proxies /api → api, so the SPA can leave the base empty.
+        VITE_API_BASE: ""
+    restart: unless-stopped
+    expose:
+      - "80"
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tc
+      POSTGRES_PASSWORD: tc
+      POSTGRES_DB: tradecopilot
+    volumes:
+      - tc_pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - tc_redisdata:/data
+
+volumes:
+  tc_pgdata:
+  tc_redisdata:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,24 @@
+[Unit]
+Description=TradeCopilot (Caddy + API + worker + frontend + Postgres + Redis)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/tradecopilot
+EnvironmentFile=/etc/tradecopilot/env
+# `up --wait` returns once everything is healthy; we keep the unit alive via
+# `--abort-on-container-exit=false` (default) so docker compose itself stays foregrounded.
+ExecStartPre=-/usr/bin/docker compose -f docker-compose.prod.yml pull
+ExecStartPre=/usr/bin/docker compose -f docker-compose.prod.yml build
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
+Restart=always
+RestartSec=5
+TimeoutStartSec=0
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,138 @@
+# Render Blueprint — one click stand-up of the whole stack.
+#
+# Usage:
+#   1. Push this repo to GitHub.
+#   2. https://dashboard.render.com  →  New  →  Blueprint
+#   3. Point Render at this file.
+#   4. Render will provision: Postgres + Key Value (Redis-protocol) + 3 services.
+#
+# The first deploy will take ~5–8 min; subsequent deploys are 1–2 min per service.
+
+databases:
+  - name: tradecopilot-db
+    plan: starter
+    databaseName: tradecopilot
+    user: tc
+
+services:
+  # Redis-protocol key-value store (Render's managed Redis).
+  - type: keyvalue
+    name: tradecopilot-redis
+    plan: starter
+    ipAllowList: []          # Internal access only.
+
+  # FastAPI backend.
+  - type: web
+    name: tradecopilot-api
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health/core
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tradecopilot-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: tradecopilot-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SECRETS_FERNET_KEY
+        sync: false           # Set after first deploy: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+      - key: AI_COACH_BACKEND
+        value: fake
+      - key: AI_SERVICE_URL
+        sync: false           # Set when you wire an LLM proxy.
+      - key: AI_SERVICE_API_KEY
+        sync: false
+      - key: AI_WORKER_ADMIN_TOKEN
+        sync: false           # The admin user's API token; needed by the worker only.
+      - key: KILL_SWITCH_HARD_DAILY_LOSS_PCT
+        value: "5.0"
+      - key: KILL_SWITCH_HARD_MAX_OPEN_POSITIONS
+        value: "20"
+      - key: VECTOR_BACKEND
+        value: memory          # Switch to "pgvector" once you create the extension on the DB.
+      - key: PARTNER_API_SECRET
+        generateValue: true
+
+  # Background worker — drains Redis queue, calls the LLM proxy.
+  - type: worker
+    name: tradecopilot-worker
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: python -m app.workers.ai_worker
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tradecopilot-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: tradecopilot-redis
+          property: connectionString
+      - key: API_BASE_URL
+        fromService:
+          type: web
+          name: tradecopilot-api
+          property: hostport
+          envVarKey: API_INTERNAL_URL          # Render wires this to https://tradecopilot-api.onrender.com
+      - key: JWT_SECRET
+        fromService:
+          type: web
+          name: tradecopilot-api
+          envVarKey: JWT_SECRET
+      - key: SECRETS_FERNET_KEY
+        fromService:
+          type: web
+          name: tradecopilot-api
+          envVarKey: SECRETS_FERNET_KEY
+      - key: AI_SERVICE_URL
+        sync: false
+      - key: AI_SERVICE_API_KEY
+        sync: false
+      - key: AI_WORKER_ADMIN_TOKEN
+        sync: false
+
+  # Static frontend (Vite build).
+  - type: web
+    name: tradecopilot-web
+    runtime: static
+    plan: starter
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    pullRequestPreviewsEnabled: true
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://tradecopilot-api.onrender.com/api/:splat
+      - type: rewrite
+        source: /health/*
+        destination: https://tradecopilot-api.onrender.com/health/:splat
+      - type: rewrite
+        source: /disclaimer
+        destination: https://tradecopilot-api.onrender.com/disclaimer
+      - type: rewrite        # SPA fallback — must be last.
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    envVars:
+      - key: VITE_API_BASE
+        value: ""           # Same-origin via the rewrites above.

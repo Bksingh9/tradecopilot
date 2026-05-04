@@ -1,0 +1,28 @@
+# Fly.io app: TradeCopilot AI worker (no public listener).
+#
+# fly launch --copy-config --config deploy/fly/fly.worker.toml --no-deploy
+# fly postgres attach tradecopilot-db --app tradecopilot-worker
+# fly secrets set REDIS_URL=$(fly redis status tradecopilot-redis --json | jq -r .private_url)
+# fly secrets set AI_SERVICE_URL=https://your-llm-proxy.example/
+# fly secrets set AI_SERVICE_API_KEY=...
+# fly secrets set AI_WORKER_ADMIN_TOKEN=tc_...        # admin user's API token
+# fly secrets set API_BASE_URL=https://tradecopilot-api.fly.dev
+# fly deploy --config deploy/fly/fly.worker.toml
+
+app = "tradecopilot-worker"
+primary_region = "iad"
+
+[build]
+  dockerfile = "../../backend/Dockerfile"
+
+[env]
+  APP_ENV = "prod"
+  AI_COACH_BACKEND = "external"
+  VECTOR_BACKEND = "memory"
+
+[processes]
+  app = "python -m app.workers.ai_worker"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

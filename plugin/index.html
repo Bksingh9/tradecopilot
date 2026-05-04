@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>TradeCopilot Widget — demo</title>
+</head>
+<body>
+  <h1 style="font-family:system-ui;">TradeCopilot embeddable widget</h1>
+  <p style="font-family:system-ui;color:#555;">
+    Educational and decision-support tool only. Not financial advice.
+  </p>
+  <div id="tradecopilot-widget"
+       data-base-url="http://localhost:8000"
+       data-user-token="REPLACE_WITH_USER_API_TOKEN"></div>
+  <script src="dist/widget.iife.js"></script>
+  <script>TradeCopilotWidget.mount();</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "@tradecopilot/plugin",
+  "version": "0.1.0",
+  "description": "Embeddable widget + JS/TS SDK for TradeCopilot partners.",
+  "main": "dist/sdk.js",
+  "module": "dist/sdk.mjs",
+  "types": "dist/sdk.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch"
+  },
+  "files": ["dist", "src"],
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.5"
+  }
+}

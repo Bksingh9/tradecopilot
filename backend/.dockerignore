@@ -1,0 +1,14 @@
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.tsbuild
+.env
+.env.local
+.git
+.github
+data_cache
+backtest_runs
+models
+tradecopilot.db
+*.log

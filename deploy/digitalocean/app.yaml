@@ -1,0 +1,98 @@
+# DigitalOcean App Platform — App Spec
+#
+# Usage:
+#   doctl auth init
+#   doctl apps create --spec deploy/digitalocean/app.yaml
+#
+# After first deploy, set the secrets that have type: SECRET marked TODO below
+# in the App Platform UI (Settings → Components → API → Environment).
+
+name: tradecopilot
+region: nyc
+
+# --- Managed databases ---------------------------------------------------
+databases:
+  - name: tradecopilot-db
+    engine: PG
+    version: "16"
+    size: db-s-1vcpu-1gb
+    num_nodes: 1
+  - name: tradecopilot-redis
+    engine: REDIS
+    version: "7"
+    size: db-s-1vcpu-1gb
+    num_nodes: 1
+
+# --- Components ----------------------------------------------------------
+services:
+  # FastAPI backend.
+  - name: api
+    dockerfile_path: backend/Dockerfile
+    source_dir: backend
+    github:
+      branch: main
+      deploy_on_push: true
+      repo: YOUR_GH_USER/tradecopilot   # change me
+    http_port: 8000
+    instance_size_slug: basic-xs
+    instance_count: 1
+    health_check:
+      http_path: /health/core
+      initial_delay_seconds: 15
+      period_seconds: 30
+    routes:
+      - path: /api
+      - path: /health
+      - path: /disclaimer
+    envs:
+      - { key: APP_ENV, value: prod }
+      - { key: AI_COACH_BACKEND, value: fake }
+      - { key: KILL_SWITCH_HARD_DAILY_LOSS_PCT, value: "5.0" }
+      - { key: KILL_SWITCH_HARD_MAX_OPEN_POSITIONS, value: "20" }
+      - { key: VECTOR_BACKEND, value: memory }
+      - { key: DATABASE_URL, scope: RUN_TIME, value: "${tradecopilot-db.DATABASE_URL}" }
+      - { key: REDIS_URL,    scope: RUN_TIME, value: "${tradecopilot-redis.REDIS_URL}" }
+      - { key: JWT_SECRET,           type: SECRET, value: "TODO-set-after-create" }
+      - { key: SECRETS_FERNET_KEY,   type: SECRET, value: "TODO-fernet-key" }
+      - { key: PARTNER_API_SECRET,   type: SECRET, value: "TODO-random" }
+      - { key: AI_SERVICE_URL,       type: SECRET, value: "" }
+      - { key: AI_SERVICE_API_KEY,   type: SECRET, value: "" }
+      - { key: AI_WORKER_ADMIN_TOKEN,type: SECRET, value: "" }
+
+  # Static frontend (Vite build). Routed last so /api etc. fall through to api.
+  - name: web
+    source_dir: frontend
+    github:
+      branch: main
+      deploy_on_push: true
+      repo: YOUR_GH_USER/tradecopilot   # change me
+    build_command: npm ci && npm run build
+    output_dir: dist
+    routes:
+      - path: /
+    envs:
+      - { key: VITE_API_BASE, value: "" }   # same-origin via the api routes above
+
+# --- Workers (no public listener) ----------------------------------------
+workers:
+  - name: ai-worker
+    dockerfile_path: backend/Dockerfile
+    source_dir: backend
+    github:
+      branch: main
+      deploy_on_push: true
+      repo: YOUR_GH_USER/tradecopilot   # change me
+    instance_size_slug: basic-xs
+    instance_count: 1
+    run_command: python -m app.workers.ai_worker
+    envs:
+      - { key: APP_ENV, value: prod }
+      - { key: AI_COACH_BACKEND, value: external }
+      - { key: API_BASE_URL, value: "${api.PUBLIC_URL}" }
+      - { key: DATABASE_URL, scope: RUN_TIME, value: "${tradecopilot-db.DATABASE_URL}" }
+      - { key: REDIS_URL,    scope: RUN_TIME, value: "${tradecopilot-redis.REDIS_URL}" }
+      - { key: JWT_SECRET,           type: SECRET, value: "${api.JWT_SECRET}" }
+      - { key: SECRETS_FERNET_KEY,   type: SECRET, value: "${api.SECRETS_FERNET_KEY}" }
+      - { key: AI_SERVICE_URL,       type: SECRET, value: "" }
+      - { key: AI_SERVICE_API_KEY,   type: SECRET, value: "" }
+      - { key: AI_WORKER_ADMIN_TOKEN,type: SECRET, value: "" }

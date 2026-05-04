@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+.tsbuild/
+
+# Node / Vite
+node_modules/
+dist/
+dist2/
+.vite/
+.parcel-cache/
+
+# Local DB / caches / artifacts
+tradecopilot.db
+data_cache/
+backtest_runs/
+models/
+
+# Env (NEVER commit real secrets)
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.log
+
+# Terraform state
+*.tfstate
+*.tfstate.*
+.terraform/
+terraform.tfvars
+crash.log

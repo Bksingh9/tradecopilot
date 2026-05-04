@@ -1,0 +1,30 @@
+# Replace example.com with your domain. For local dev, use "localhost".
+# Caddy will obtain a Let's Encrypt cert automatically when DOMAIN is a
+# real domain pointed at this server's public IP.
+
+{$DOMAIN:localhost} {
+    encode gzip zstd
+
+    # Backend API + health + disclaimer.
+    @api path /api/* /health/* /disclaimer
+    handle @api {
+        reverse_proxy api:8000 {
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote}
+        }
+    }
+
+    # Static frontend (nginx container) for everything else.
+    handle {
+        reverse_proxy frontend:80
+    }
+
+    # Common security headers.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "geolocation=(), camera=(), microphone=()"
+    }
+}
