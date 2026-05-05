@@ -6,7 +6,8 @@ Pick whichever target fits. Each subdirectory is a self-contained bundle with it
 
 | Target | Best for | Time | Cost / mo (idle) | One-liner |
 |---|---|---|---|---|
-| **[Render](./render/)** | Quickest path. Blueprint = single yaml. | ~10 min | ~$15 | push → click "New Blueprint" |
+| **[Render](./render/)** | Free tier with Blueprint = single yaml. Cold-start ~50s. | ~10 min | $0 (free) – $15 (paid) | push → click "New Blueprint" |
+| **[Railway](./railway/)** | No cold starts, simplest UX, managed PG+Redis. | ~10 min | ~$8–12 | `bash deploy/railway/deploy.sh` |
 | **[Fly.io](./fly/)** | Fast global, Postgres + Upstash Redis built in. | ~10 min | ~$10 | `bash deploy/fly/deploy.sh` |
 | **[DigitalOcean](./digitalocean/)** | Single managed app, managed Postgres + Redis. | ~10 min | ~$25 | `doctl apps create --spec deploy/digitalocean/app.yaml` |
 | **[AWS](./aws/)** | Full VPC + ECS Fargate + RDS + ElastiCache + S3/CloudFront. | ~25 min | ~$30+ | `cd deploy/aws && terraform apply` |
