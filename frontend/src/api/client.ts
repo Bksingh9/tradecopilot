@@ -67,18 +67,46 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
 
   if (!res.ok) {
     if (opts.swallow) return payload as T;
-    const err = (payload as { error?: { code?: string; message?: string } })?.error;
     if (res.status === 401) {
       setToken(null);
       // Don't redirect mid-render; let ProtectedRoute handle it on next render.
     }
-    throw new ApiError(
-      err?.message ?? res.statusText ?? "Request failed",
-      res.status,
-      err?.code,
-    );
+    throw new ApiError(extractErrorMessage(payload, res.statusText), res.status, extractErrorCode(payload));
   }
   return payload as T;
+}
+
+/**
+ * Extracts a human-readable error from any of the shapes our backend may
+ * return: TradeCopilotError ({ error: { code, message } }), pydantic 422
+ * ({ detail: [{ loc, msg }] }), FastAPI default ({ detail: "..." }), or a
+ * plain string body. Falls back to HTTP status text.
+ */
+function extractErrorMessage(payload: unknown, fallback: string): string {
+  if (!payload) return fallback || "Request failed";
+  if (typeof payload === "string") return payload;
+  const obj = payload as Record<string, unknown>;
+  // Our app: { error: { code, message } }
+  const ourErr = obj.error as { message?: string } | undefined;
+  if (ourErr && typeof ourErr.message === "string") return ourErr.message;
+  // FastAPI default: { detail: string | array }
+  const detail = obj.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d: unknown) => {
+        const item = d as { loc?: unknown[]; msg?: string };
+        const loc = Array.isArray(item.loc) ? item.loc.filter((x) => x !== "body").join(".") : "";
+        return loc ? `${loc}: ${item.msg ?? "invalid"}` : (item.msg ?? "invalid");
+      })
+      .join("; ");
+  }
+  return fallback || "Request failed";
+}
+
+function extractErrorCode(payload: unknown): string | undefined {
+  const obj = payload as { error?: { code?: string } } | null;
+  return obj?.error?.code;
 }
 
 export const api = {
