@@ -18,7 +18,14 @@ function resolveApiBase(): string {
   if (fromEnv) return fromEnv.replace(/\/+$/, "");
   if (typeof window !== "undefined") {
     const h = window.location.hostname;
+    // Render: fixed canonical hostnames.
     if (h === "tradecopilot-web.onrender.com") return "https://tradecopilot-api.onrender.com";
+    // Railway: hostnames look like "tradecopilot-web-production-XXXX.up.railway.app".
+    // Swap the leading service name to point at the API service so the SPA stays
+    // portable across Railway projects without rebuilding for VITE_API_BASE.
+    if (h.endsWith(".up.railway.app") && h.startsWith("tradecopilot-web")) {
+      return `https://${h.replace(/^tradecopilot-web/, "tradecopilot-api")}`;
+    }
   }
   return "";
 }
