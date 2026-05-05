@@ -76,7 +76,7 @@ railway add --service "$API_SERVICE" 2>&1 | grep -v -i "already" || true
 
 echo "==> setting variables for [$API_SERVICE]"
 railway variables --service "$API_SERVICE" \
-  --set "RAILWAY_DOCKERFILE_PATH=backend/Dockerfile" \
+  --set "RAILWAY_DOCKERFILE_PATH=deploy/railway/api.Dockerfile" \
   --set "APP_ENV=prod" \
   --set "JWT_SECRET=$JWT_SECRET" \
   --set "SECRETS_FERNET_KEY=$FERNET" \
@@ -108,7 +108,7 @@ railway add --service "$WEB_SERVICE" 2>&1 | grep -v -i "already" || true
 # points at $API_SERVICE.up.railway.app — no VITE_API_BASE build arg needed.
 echo "==> setting variables for [$WEB_SERVICE]"
 railway variables --service "$WEB_SERVICE" \
-  --set "RAILWAY_DOCKERFILE_PATH=frontend/Dockerfile"
+  --set "RAILWAY_DOCKERFILE_PATH=deploy/railway/web.Dockerfile"
 
 echo "==> deploying [$WEB_SERVICE]"
 railway up --service "$WEB_SERVICE" --detach
