@@ -1,6 +1,29 @@
 /** Tiny fetch wrapper. Auth header injected from localStorage. */
 
-const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
+/**
+ * Resolve the API base URL.
+ *
+ * Order of precedence:
+ *   1. `VITE_API_BASE` env var (set at build time) — preferred for self-hosting.
+ *   2. Hostname heuristic — when served from `tradecopilot-web.onrender.com`
+ *      the API lives at `tradecopilot-api.onrender.com`.
+ *   3. Empty string — same-origin (Vite dev proxy / Caddy reverse-proxy).
+ *
+ * The hostname heuristic exists because Render's static-site rebuild does not
+ * always re-bake env vars cleanly on free tier; this keeps the deployed SPA
+ * pointing at the right backend even if the build's env didn't propagate.
+ */
+function resolveApiBase(): string {
+  const fromEnv = (import.meta.env.VITE_API_BASE as string | undefined)?.trim();
+  if (fromEnv) return fromEnv.replace(/\/+$/, "");
+  if (typeof window !== "undefined") {
+    const h = window.location.hostname;
+    if (h === "tradecopilot-web.onrender.com") return "https://tradecopilot-api.onrender.com";
+  }
+  return "";
+}
+
+const API_BASE = resolveApiBase();
 const TOKEN_KEY = "tc_jwt";
 
 export class ApiError extends Error {
