@@ -1,8 +1,10 @@
 """FastAPI app entrypoint."""
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import (
@@ -57,6 +59,22 @@ app = FastAPI(
     version="0.3.0",
     lifespan=lifespan,
     description=DISCLAIMER,
+)
+
+# Middleware: CORS (frontend may be served from a different origin in prod).
+# Provide a comma-separated allow-list via CORS_ALLOW_ORIGINS env var; falls back
+# to the canonical Render frontend + localhost dev ports.
+_cors_default = "https://tradecopilot-web.onrender.com,http://localhost:5173,http://localhost:4173,http://localhost"
+_cors_origins = [
+    o.strip() for o in os.environ.get("CORS_ALLOW_ORIGINS", _cors_default).split(",") if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Token", "X-Partner-Key"],
+    max_age=600,
 )
 
 # Middleware: rate limiting (Redis-backed if available, else in-process).

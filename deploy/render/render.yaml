@@ -86,4 +86,4 @@ services:
         value: public, max-age=31536000, immutable
     envVars:
       - key: VITE_API_BASE
-        value: ""           # Same-origin via the rewrites above.
+        value: https://tradecopilot-api.onrender.com   # Absolute URL — cross-origin via CORSMiddleware.
