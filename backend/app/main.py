@@ -34,6 +34,7 @@ logger = get_logger(__name__)
 
 DISCLAIMER = (
     "TradeCopilot Agent is an educational and decision-support tool only. "
+    "This is not financial advice. "
     "It does NOT provide guaranteed or assured returns. "
     "All trading involves risk of loss; you alone are responsible for your decisions. "
     "Past performance and backtest results are not indicative of future results. "

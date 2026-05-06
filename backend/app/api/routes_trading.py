@@ -177,17 +177,36 @@ class UserKillReq(BaseModel):
     reason: str = "user-initiated"
 
 
-@router.post("/kill-switch", response_model=KillSwitch)
+@router.post("/kill-switch")
 def user_kill_switch(
     req: UserKillReq,
     current: User = Depends(get_current_user),
     session: Session = Depends(get_session),
-) -> KillSwitch:
-    return risk_mod.set_kill_switch(
+) -> dict:
+    """Set a user-scoped kill switch.
+
+    NOTE: deliberately dropped `response_model=KillSwitch` here — pydantic v2 +
+    SQLModel `table=True` was returning an empty `{}` body in production (the
+    field schema collapses for table classes that have FK-typed fields and an
+    Optional datetime). We serialize explicitly so the frontend always sees the
+    `id` it needs to call /kill-switch/{id}/clear.
+    """
+    row = risk_mod.set_kill_switch(
         session,
         tenant_id=current.tenant_id, user_id=current.id, scope="user",
         reason=req.reason, set_by=f"user:{current.id}",
     )
+    return {
+        "id": row.id,
+        "tenant_id": row.tenant_id,
+        "user_id": row.user_id,
+        "scope": row.scope,
+        "reason": row.reason,
+        "set_by": row.set_by,
+        "active": row.active,
+        "cleared_at": row.cleared_at.isoformat() if row.cleared_at else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
 
 
 @router.post("/kill-switch/{kill_id}/clear")
