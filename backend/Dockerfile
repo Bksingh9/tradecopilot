@@ -10,4 +10,7 @@ RUN pip install -r requirements.txt
 COPY . .
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Bind IPv6 dual-stack (covers IPv4 too on Linux) and honour $PORT when set.
+# Required for Railway (IPv6-only internal proxy); transparent on Render/Fly/local.
+# Shell form is intentional so $PORT expands at start.
+CMD sh -c "uvicorn app.main:app --host :: --port ${PORT:-8000}"

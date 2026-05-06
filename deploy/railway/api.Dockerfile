@@ -21,4 +21,6 @@ RUN pip install -r requirements.txt
 COPY backend/ .
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Bind IPv6 dual-stack (Railway's internal proxy is IPv6-only). Shell form so
+# $PORT expands at runtime when Railway provides it.
+CMD sh -c "uvicorn app.main:app --host :: --port ${PORT:-8000}"
