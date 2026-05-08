@@ -29,6 +29,37 @@ def _ensure_rule(session: Session, user_id: int, tenant_id: int) -> RiskRule:
     return rule
 
 
+def _simulate_paper_fill(broker: str, order: OrderRequest) -> OrderResult:
+    """Synthesize a paper-mode broker fill without touching any broker API.
+
+    For LIMIT orders we honour the user's stated limit price; for MARKET we
+    try to pull a live quote, falling back to the limit/stop_price and finally
+    to 0.0 if no source is reachable. Either way: ACCEPTED + FILLED in one
+    step, deterministic enough for journaling and strategy qualification.
+    """
+    import uuid
+    from app.data import get_realtime_quote
+
+    fill_price: float = 0.0
+    if order.order_type == "MARKET":
+        try:
+            q = get_realtime_quote(order.symbol, exchange_hint=order.exchange)
+            fill_price = float(q.ltp) if q and q.ltp is not None else 0.0
+        except Exception:
+            fill_price = order.price or order.stop_price or 0.0
+    else:
+        fill_price = order.price or 0.0
+
+    return OrderResult(
+        broker=broker,                                      # type: ignore[arg-type]
+        broker_order_id=f"PAPER-{uuid.uuid4().hex[:12].upper()}",
+        status="FILLED",
+        filled_qty=order.qty,
+        avg_price=fill_price or None,
+        raw={"paper": True, "simulated": True, "exchange": order.exchange},
+    )
+
+
 def _resolve_connection(session: Session, user_id: int, tenant_id: int, broker: str) -> BrokerConnection:
     conn = session.exec(
         select(BrokerConnection).where(
@@ -61,14 +92,20 @@ def execute_order(
     ctx = risk_mod.build_context(session, user_id, rule)
     risk_mod.evaluate_order(order, rule, ctx)
 
-    conn = _resolve_connection(session, user_id, tenant_id, broker)
-    access_token = decrypt(conn.encrypted_access_token) if conn.encrypted_access_token else None
-    client = get_client(broker, access_token=access_token)
-
-    try:
-        result = client.place_order(order)
-    except Exception as e:
-        raise BrokerError(f"{broker} place_order failed: {e}") from e
+    # Paper trading must NOT require a real broker connection. The whole point
+    # of `paper=True` is that the user can validate strategies (and qualify
+    # for full_auto) without ever wiring real broker credentials. Simulate
+    # the fill in-process; the trade is still journaled with paper=True.
+    if order.paper:
+        result = _simulate_paper_fill(broker, order)
+    else:
+        conn = _resolve_connection(session, user_id, tenant_id, broker)
+        access_token = decrypt(conn.encrypted_access_token) if conn.encrypted_access_token else None
+        client = get_client(broker, access_token=access_token)
+        try:
+            result = client.place_order(order)
+        except Exception as e:
+            raise BrokerError(f"{broker} place_order failed: {e}") from e
 
     safe_event(
         logger, logging.INFO, "order.placed",
