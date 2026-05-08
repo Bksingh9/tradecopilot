@@ -68,17 +68,30 @@ def signals(
 
 
 # --- Orders ------------------------------------------------------------------
-@router.post("/orders", response_model=OrderResult)
+@router.post("/orders")
 def place_order(
     broker: str,
     order: OrderRequest,
     paper: Optional[bool] = None,
     current: User = Depends(get_current_user),
     session: Session = Depends(get_session),
-) -> OrderResult:
-    return execution.execute_order(
+) -> dict:
+    """Place an order. Same response_model=OrderResult pydantic v2 edge case
+    as /kill-switch — FastAPI's response coercion calls dataclasses.replace
+    on the result and crashes. Serialize explicitly.
+    """
+    result = execution.execute_order(
         session, current.id, current.tenant_id, broker, order, paper=paper
     )
+    return {
+        "broker": result.broker,
+        "broker_order_id": result.broker_order_id,
+        "status": result.status,
+        "filled_qty": result.filled_qty,
+        "avg_price": result.avg_price,
+        "raw": result.raw,
+        "submitted_at": result.submitted_at.isoformat() if result.submitted_at else None,
+    }
 
 
 # --- Risk --------------------------------------------------------------------
