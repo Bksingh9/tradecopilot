@@ -14,6 +14,7 @@ from app.api import (
     routes_audit,
     routes_auth,
     routes_backtest,
+    routes_brokers,
     routes_health,
     routes_journal,
     routes_partner,
@@ -94,6 +95,7 @@ async def trade_copilot_error_handler(_: Request, exc: TradeCopilotError) -> JSO
 app.include_router(routes_auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(routes_users.router, prefix="/api/users", tags=["users"])
 app.include_router(routes_trading.router, prefix="/api/trading", tags=["trading"])
+app.include_router(routes_brokers.router, prefix="/api/brokers", tags=["brokers"])
 app.include_router(routes_journal.router, prefix="/api/journal", tags=["journal"])
 app.include_router(routes_ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(routes_agents.router, prefix="/api/agents", tags=["agents"])

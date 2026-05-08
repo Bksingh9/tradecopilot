@@ -32,23 +32,55 @@ def _ensure_rule(session: Session, user_id: int, tenant_id: int) -> RiskRule:
 def _simulate_paper_fill(broker: str, order: OrderRequest) -> OrderResult:
     """Synthesize a paper-mode broker fill without touching any broker API.
 
-    For LIMIT orders we honour the user's stated limit price; for MARKET we
-    try to pull a live quote, falling back to the limit/stop_price and finally
-    to 0.0 if no source is reachable. Either way: ACCEPTED + FILLED in one
-    step, deterministic enough for journaling and strategy qualification.
+    Price-discovery cascade for MARKET orders:
+      1. Live quote via get_realtime_quote (yfinance/NSE/Alpaca etc.)
+      2. Last daily close from OHLCV history (handles flaky realtime feeds)
+      3. order.price / order.stop_price hint
+      4. 0.0 (last resort — journal will still record the trade)
+
+    For LIMIT orders we honour the user's limit price directly. Either way:
+    ACCEPTED + FILLED in one step, deterministic enough for journaling and
+    paper-qualification.
     """
     import uuid
-    from app.data import get_realtime_quote
+    from datetime import datetime, timedelta
+    from app.data import get_realtime_quote, get_ohlcv
 
     fill_price: float = 0.0
+    price_source: str = "none"
+
     if order.order_type == "MARKET":
+        # 1: live quote
         try:
             q = get_realtime_quote(order.symbol, exchange_hint=order.exchange)
-            fill_price = float(q.ltp) if q and q.ltp is not None else 0.0
-        except Exception:
+            if q and q.ltp is not None:
+                fill_price = float(q.ltp)
+                price_source = "realtime"
+        except Exception as e:
+            logger.warning("paper_fill realtime fail %s: %s", order.symbol, e)
+
+        # 2: last close from recent OHLCV (most useful when realtime breaks)
+        if not fill_price:
+            try:
+                end = datetime.utcnow()
+                start = end - timedelta(days=10)
+                df = get_ohlcv(order.symbol, start, end, "1d", exchange_hint=order.exchange)
+                if df is not None and not df.empty and "close" in df.columns:
+                    last_close = float(df["close"].dropna().iloc[-1])
+                    if last_close > 0:
+                        fill_price = last_close
+                        price_source = "last_close"
+            except Exception as e:
+                logger.warning("paper_fill ohlcv fail %s: %s", order.symbol, e)
+
+        # 3: user-supplied hint
+        if not fill_price:
             fill_price = order.price or order.stop_price or 0.0
+            if fill_price:
+                price_source = "user_hint"
     else:
         fill_price = order.price or 0.0
+        price_source = "limit_price"
 
     return OrderResult(
         broker=broker,                                      # type: ignore[arg-type]
@@ -56,7 +88,12 @@ def _simulate_paper_fill(broker: str, order: OrderRequest) -> OrderResult:
         status="FILLED",
         filled_qty=order.qty,
         avg_price=fill_price or None,
-        raw={"paper": True, "simulated": True, "exchange": order.exchange},
+        raw={
+            "paper": True,
+            "simulated": True,
+            "exchange": order.exchange,
+            "price_source": price_source,
+        },
     )
 
 
