@@ -29,6 +29,34 @@ def _ensure_rule(session: Session, user_id: int, tenant_id: int) -> RiskRule:
     return rule
 
 
+# Last-resort price floor for paper sims when every upstream feed fails.
+# These are rough mid-2025 closes — used only when realtime + OHLCV all fail,
+# and only so the journal has a non-zero entry_price for accounting purposes.
+# Real prices come from get_realtime_quote / get_ohlcv when those work.
+_LAST_KNOWN_PRICES: dict[str, float] = {
+    # NSE blue chips
+    "RELIANCE": 1450.0, "RELIANCE.NS": 1450.0,
+    "TCS": 4100.0, "TCS.NS": 4100.0,
+    "INFY": 1850.0, "INFY.NS": 1850.0,
+    "HDFCBANK": 1720.0, "HDFCBANK.NS": 1720.0,
+    "ICICIBANK": 1320.0, "ICICIBANK.NS": 1320.0,
+    "HINDUNILVR": 2450.0, "HINDUNILVR.NS": 2450.0,
+    "ITC": 470.0, "ITC.NS": 470.0,
+    "SBIN": 820.0, "SBIN.NS": 820.0,
+    "BHARTIARTL": 1650.0, "BHARTIARTL.NS": 1650.0,
+    "WIPRO": 540.0, "WIPRO.NS": 540.0,
+    # US blue chips
+    "AAPL": 230.0, "MSFT": 420.0, "GOOGL": 175.0, "AMZN": 200.0,
+    "META": 580.0, "TSLA": 280.0, "NVDA": 140.0, "JPM": 220.0,
+    "BRK-B": 460.0, "V": 290.0,
+}
+
+
+def _last_known_price(symbol: str) -> Optional[float]:
+    sym = symbol.strip().upper()
+    return _LAST_KNOWN_PRICES.get(sym)
+
+
 def _simulate_paper_fill(broker: str, order: OrderRequest) -> OrderResult:
     """Synthesize a paper-mode broker fill without touching any broker API.
 
@@ -78,6 +106,14 @@ def _simulate_paper_fill(broker: str, order: OrderRequest) -> OrderResult:
             fill_price = order.price or order.stop_price or 0.0
             if fill_price:
                 price_source = "user_hint"
+
+        # 4: last-known-price floor for popular symbols (so the journal always
+        #    has a non-zero entry_price even when every upstream feed is down)
+        if not fill_price:
+            lkp = _last_known_price(order.symbol)
+            if lkp:
+                fill_price = lkp
+                price_source = "last_known_floor"
     else:
         fill_price = order.price or 0.0
         price_source = "limit_price"
