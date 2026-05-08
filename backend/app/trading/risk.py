@@ -6,7 +6,7 @@ The kill switch short-circuits every order. All set/clear writes an AuditEvent.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Optional
 
@@ -32,9 +32,23 @@ class RiskContext:
 
 
 # ---------------------------------------------------------------------------
+def _copy_rule(rule: RiskRule, **overrides) -> RiskRule:
+    """SQLModel-safe shallow copy with field overrides.
+
+    `dataclasses.replace()` only works on dataclass instances; RiskRule is a
+    SQLModel/Pydantic table class, so we use model_copy/model_dump to build a
+    detached (non-DB-bound) RiskRule with the same values plus overrides.
+    """
+    data = rule.model_dump()
+    data.update(overrides)
+    # Drop primary key so the copy is not treated as the persisted row.
+    data.pop("id", None)
+    return RiskRule(**data)
+
+
 def effective_rule(rule: RiskRule) -> RiskRule:
     """Apply env-driven hard caps. Most conservative wins."""
-    return replace(
+    return _copy_rule(
         rule,
         daily_loss_limit_pct=min(rule.daily_loss_limit_pct, settings.kill_switch_hard_daily_loss_pct),
         max_open_positions=min(rule.max_open_positions, settings.kill_switch_hard_max_open_positions),
@@ -56,7 +70,7 @@ def dynamic_risk_caps(rule: RiskRule, ctx: RiskContext) -> RiskRule:
     if ctx.recent_vol_pct >= 3.0:
         new_risk *= 0.75
 
-    return replace(
+    return _copy_rule(
         out,
         max_risk_per_trade_pct=min(out.max_risk_per_trade_pct, new_risk),
         max_open_positions=min(out.max_open_positions, new_max_pos),
