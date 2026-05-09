@@ -270,6 +270,25 @@ def close_position(
         },
     )
 
+    # ML self-learning hook: if the user just crossed a 20-trade boundary
+    # of CLOSED trades, schedule a model retrain in the background.
+    try:
+        from sqlmodel import func
+        from app.scheduler import schedule_retrain_if_due
+        n_closed = session.exec(
+            select(func.count(Trade.id)).where(
+                Trade.user_id == current.id,
+                Trade.tenant_id == current.tenant_id,
+                Trade.status == "CLOSED",
+            )
+        ).one()
+        if isinstance(n_closed, tuple):
+            n_closed = n_closed[0]
+        schedule_retrain_if_due(current.id, int(n_closed or 0))
+    except Exception:
+        # Self-learning is best-effort; never break the close path.
+        pass
+
     return {
         "id": t.id,
         "symbol": t.symbol,

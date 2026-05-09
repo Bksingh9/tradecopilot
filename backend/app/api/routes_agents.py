@@ -42,6 +42,46 @@ def run_cycle(
     )
 
 
+# ---- Convenience: cycle over the user's watchlist ------------------------
+class WatchlistCycleReq(BaseModel):
+    timeframe: str = "1d"
+    broker: str = "zerodha"
+    exchange_hint: Optional[str] = "NSE"
+
+
+@router.post("/cycle/watchlist", response_model=CycleReport)
+def run_cycle_watchlist(
+    req: WatchlistCycleReq = WatchlistCycleReq(),
+    current: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> CycleReport:
+    """Run the agent cycle over the user's saved watchlist (no symbols arg).
+
+    The frontend's "Run cycle now" button hits this. The same code path is
+    invoked by the periodic scheduler for users with autonomy>=semi_auto.
+    """
+    from app.users import service as user_service
+
+    prefs = user_service.get_or_create_prefs(session, current)
+    symbols = list(prefs.watchlist or [])
+    if not symbols:
+        # Empty cycle is fine — user just has no watchlist yet.
+        return CycleReport(
+            ran_at=__import__("datetime").datetime.utcnow(),
+            symbols=[],
+            decisions=[],
+            placed_orders=[],
+            errors=[],
+        )
+
+    enforce_plan(session, current, "agent.cycle", {"symbols": symbols})
+    orch = Orchestrator()
+    return orch.run_cycle(
+        session, current, symbols,
+        timeframe=req.timeframe, broker=req.broker, exchange_hint=req.exchange_hint,
+    )
+
+
 @router.post("/flatten-now", response_model=list[ExecutionResult])
 def flatten_now(
     current: User = Depends(get_current_user),
