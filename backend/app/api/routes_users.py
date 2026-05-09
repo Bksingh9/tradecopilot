@@ -86,6 +86,65 @@ def set_autonomy(
     )
 
 
+# --- Watchlist ---------------------------------------------------------------
+class WatchlistRes(BaseModel):
+    watchlist: list[str]
+
+
+class WatchlistReq(BaseModel):
+    symbol: str
+
+
+@router.get("/watchlist", response_model=WatchlistRes)
+def get_watchlist(
+    current: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> WatchlistRes:
+    from app.users import service as user_service
+    prefs = user_service.get_or_create_prefs(session, current)
+    return WatchlistRes(watchlist=list(prefs.watchlist or []))
+
+
+@router.post("/watchlist/add", response_model=WatchlistRes)
+def watchlist_add(
+    req: WatchlistReq,
+    current: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> WatchlistRes:
+    from app.users import service as user_service
+    prefs = user_service.get_or_create_prefs(session, current)
+    sym = req.symbol.strip().upper()
+    if not sym:
+        raise PermissionDenied("symbol required")
+    wl = list(prefs.watchlist or [])
+    if sym not in wl:
+        wl.append(sym)
+    if len(wl) > 50:
+        raise PermissionDenied("watchlist cap reached (50)")
+    prefs.watchlist = wl
+    session.add(prefs)
+    session.commit()
+    session.refresh(prefs)
+    return WatchlistRes(watchlist=list(prefs.watchlist or []))
+
+
+@router.post("/watchlist/remove", response_model=WatchlistRes)
+def watchlist_remove(
+    req: WatchlistReq,
+    current: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> WatchlistRes:
+    from app.users import service as user_service
+    prefs = user_service.get_or_create_prefs(session, current)
+    sym = req.symbol.strip().upper()
+    wl = [s for s in (prefs.watchlist or []) if s.upper() != sym]
+    prefs.watchlist = wl
+    session.add(prefs)
+    session.commit()
+    session.refresh(prefs)
+    return WatchlistRes(watchlist=list(prefs.watchlist or []))
+
+
 @router.post("/qualify-paper", response_model=AutonomyRes)
 def mark_paper_qualified(
     current: User = Depends(get_current_user),

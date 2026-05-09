@@ -49,6 +49,7 @@ export interface Quote {
 
 export interface DashboardRes {
   realized_pnl_today: number;
+  unrealized_pnl?: number;
   open_positions_count: number;
   daily_loss_limit_value: number;
   risk_used_pct: number;
@@ -56,6 +57,8 @@ export interface DashboardRes {
   kill_switch_active: boolean;
   kill_switch_reason?: string | null;
   autonomy_mode: AutonomyMode;
+  capital_deployed?: number;
+  starting_equity?: number;
 }
 
 export interface Trade {

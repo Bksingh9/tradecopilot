@@ -131,6 +131,88 @@ export function useTrades(filters?: { status?: string; symbol?: string; strategy
   });
 }
 
+// ---- Place / close orders ------------------------------------------------
+export interface PlaceOrderReq {
+  symbol: string;
+  exchange?: string;
+  side: "BUY" | "SELL";
+  qty: number;
+  order_type?: "MARKET" | "LIMIT";
+  price?: number;
+  product?: "CNC" | "MIS" | "NRML" | "DAY";
+  strategy?: string;
+  paper?: boolean;
+}
+
+export function usePlaceOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ broker, ...order }: PlaceOrderReq & { broker: string }) =>
+      api.post<{
+        broker: string;
+        broker_order_id: string;
+        status: string;
+        avg_price: number | null;
+      }>(`/api/trading/orders`, order, { broker, paper: order.paper ?? true }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["trades"] });
+      qc.invalidateQueries({ queryKey: ["summary"] });
+    },
+  });
+}
+
+export function useClosePosition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (tradeId: number) =>
+      api.post<{
+        id: number;
+        symbol: string;
+        exit_price: number;
+        realized_pnl: number;
+        status: string;
+      }>(`/api/trading/positions/${tradeId}/close`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["trades"] });
+      qc.invalidateQueries({ queryKey: ["summary"] });
+    },
+  });
+}
+
+// ---- Watchlist -----------------------------------------------------------
+export function useWatchlist() {
+  return useQuery({
+    queryKey: ["watchlist"],
+    queryFn: () => api.get<{ watchlist: string[] }>("/api/users/watchlist"),
+  });
+}
+
+export function useWatchlistAdd() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (symbol: string) =>
+      api.post<{ watchlist: string[] }>("/api/users/watchlist/add", { symbol }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["watchlist"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+export function useWatchlistRemove() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (symbol: string) =>
+      api.post<{ watchlist: string[] }>("/api/users/watchlist/remove", { symbol }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["watchlist"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
 export function useJournalEntries() {
   return useQuery({
     queryKey: ["journal-entries"],

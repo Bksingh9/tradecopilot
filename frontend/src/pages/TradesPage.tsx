@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-import { useAddJournalEntry, useJournalEntries, useTrades } from "@/api/queries";
+import { useAddJournalEntry, useClosePosition, useJournalEntries, useTrades } from "@/api/queries";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
@@ -24,6 +24,7 @@ export function TradesPage() {
   );
 
   const { data: trades, isLoading } = useTrades(filters);
+  const close = useClosePosition();
 
   return (
     <div className="space-y-6">
@@ -70,6 +71,7 @@ export function TradesPage() {
                   <th>Strategy</th>
                   <th>Status</th>
                   <th>Opened</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -94,6 +96,17 @@ export function TradesPage() {
                       </Badge>
                     </td>
                     <td className="text-xs text-muted">{fmtDate(t.opened_at)}</td>
+                    <td>
+                      {t.status === "OPEN" ? (
+                        <button
+                          onClick={() => close.mutate(t.id)}
+                          disabled={close.isPending}
+                          className="px-2 py-0.5 text-xs rounded bg-rose-600/80 hover:bg-rose-500 text-white transition disabled:opacity-50"
+                        >
+                          {close.isPending && close.variables === t.id ? "…" : "Close"}
+                        </button>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>

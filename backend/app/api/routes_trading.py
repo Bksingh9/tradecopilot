@@ -143,6 +143,7 @@ def update_risk(
 # --- Dashboard ---------------------------------------------------------------
 class DashboardRes(BaseModel):
     realized_pnl_today: float
+    unrealized_pnl: float = 0.0
     open_positions_count: int
     daily_loss_limit_value: float
     risk_used_pct: float
@@ -150,6 +151,21 @@ class DashboardRes(BaseModel):
     kill_switch_active: bool
     kill_switch_reason: Optional[str] = None
     autonomy_mode: str
+    capital_deployed: float = 0.0
+    starting_equity: float = 100000.0
+
+
+def _quote_or_floor(symbol: str, exchange_hint: Optional[str]) -> Optional[float]:
+    """Best-effort current price for MTM. Falls back through realtime → last_known floor."""
+    try:
+        q = get_realtime_quote(symbol, exchange_hint=exchange_hint)
+        if q and q.ltp is not None:
+            return float(q.ltp)
+    except Exception:
+        pass
+    # Fallback: paper-fill's last-known table (lazy import to avoid cycles)
+    from app.trading.execution import _last_known_price  # type: ignore
+    return _last_known_price(symbol)
 
 
 @router.get("/dashboard", response_model=DashboardRes)
@@ -157,12 +173,33 @@ def dashboard(
     current: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> DashboardRes:
+    from app.trading.models import Trade  # local import; avoids cyclic top-level
+
     rule = session.get(RiskRule, current.id) or RiskRule(
         user_id=current.id, tenant_id=current.tenant_id
     )
     realized = risk_mod.realized_pnl_today(session, current.id)
     daily_limit = rule.starting_equity * (rule.daily_loss_limit_pct / 100.0)
     used_pct = abs(min(realized, 0.0)) / daily_limit * 100.0 if daily_limit else 0.0
+
+    # Mark-to-market open positions: pull current price (or last_known floor)
+    # for each OPEN trade and compute unrealized P&L + capital deployed.
+    open_trades = session.exec(
+        select(Trade).where(
+            Trade.user_id == current.id,
+            Trade.tenant_id == current.tenant_id,
+            Trade.status == "OPEN",
+        )
+    ).all()
+    unrealized = 0.0
+    deployed = 0.0
+    for t in open_trades:
+        deployed += (t.entry_price or 0.0) * (t.qty or 0)
+        cur = _quote_or_floor(t.symbol, t.exchange)
+        if cur is None or not t.entry_price or not t.qty:
+            continue
+        diff = (cur - t.entry_price) if t.side == "BUY" else (t.entry_price - cur)
+        unrealized += diff * t.qty
 
     prefs = user_service.get_or_create_prefs(session, current)
     quotes: list[Quote] = []
@@ -175,6 +212,7 @@ def dashboard(
     blocked_reason = risk_mod.is_blocked(session, current.id, current.tenant_id)
     return DashboardRes(
         realized_pnl_today=realized,
+        unrealized_pnl=round(unrealized, 2),
         open_positions_count=risk_mod.open_positions_count(session, current.id),
         daily_loss_limit_value=daily_limit,
         risk_used_pct=used_pct,
@@ -182,7 +220,67 @@ def dashboard(
         kill_switch_active=blocked_reason is not None,
         kill_switch_reason=blocked_reason,
         autonomy_mode=current.autonomy_mode,
+        capital_deployed=round(deployed, 2),
+        starting_equity=rule.starting_equity,
     )
+
+
+# --- Position close (sell-side fill) -----------------------------------------
+@router.post("/positions/{trade_id}/close")
+def close_position(
+    trade_id: int,
+    current: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Close a single OPEN trade at the current market price (paper-aware).
+
+    For paper trades we simulate the fill via _quote_or_floor; for live trades
+    we'd route through the broker — that path is left for the broker-OAuth flow.
+    """
+    from app.trading.models import Trade
+
+    t = session.get(Trade, trade_id)
+    if not t or t.user_id != current.id or t.tenant_id != current.tenant_id:
+        raise NotFound("trade not found")
+    if t.status != "OPEN":
+        raise PermissionDenied(f"trade is already {t.status}")
+
+    exit_price = _quote_or_floor(t.symbol, t.exchange) or t.entry_price or 0.0
+    if t.side == "BUY":
+        realized = (exit_price - (t.entry_price or 0.0)) * (t.qty or 0)
+    else:  # SELL → BUY-to-cover semantics
+        realized = ((t.entry_price or 0.0) - exit_price) * (t.qty or 0)
+
+    t.exit_price = exit_price
+    t.realized_pnl = round(realized, 2)
+    t.status = "CLOSED"
+    t.closed_at = datetime.utcnow()
+    session.add(t)
+    session.commit()
+    session.refresh(t)
+
+    audit.record(
+        session, tenant_id=current.tenant_id, user_id=current.id, actor="user",
+        action="position.closed",
+        subject_type="trade", subject_id=t.id,
+        payload={
+            "symbol": t.symbol, "qty": t.qty, "side": t.side,
+            "entry_price": t.entry_price, "exit_price": t.exit_price,
+            "realized_pnl": t.realized_pnl, "paper": t.paper,
+        },
+    )
+
+    return {
+        "id": t.id,
+        "symbol": t.symbol,
+        "side": t.side,
+        "qty": t.qty,
+        "entry_price": t.entry_price,
+        "exit_price": t.exit_price,
+        "realized_pnl": t.realized_pnl,
+        "status": t.status,
+        "closed_at": t.closed_at.isoformat() if t.closed_at else None,
+    }
 
 
 # --- Kill switch (user) ------------------------------------------------------
